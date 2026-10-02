@@ -160,6 +160,11 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
         // Do not SetWindowPos / ExecuteScript the candidate host while its
         // WebView2 controller is still being created. That is what makes
         // CreateCoreWebView2Controller fail for this HWND while menu/FTB succeed.
+        // 隐藏 → 弹出的边界：图片池在这里重抽，WebView2 后端随后的更新脚本携带本次选中。
+        if (!::is_global_wnd_cand_shown)
+        {
+            RerollActiveCandidateSkinImages();
+        }
         ::is_global_wnd_cand_shown = true;
         Global::SetCandidateWindowRenderedVisible(true);
         if (!IsCandidateWebviewReady())

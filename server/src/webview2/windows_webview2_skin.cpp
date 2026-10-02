@@ -26,7 +26,70 @@
 namespace
 {
 std::optional<CandidateSkinCatalog::Package> activeExternalCandidateSkin;
+// 图片池当前选中的成员（相对皮肤目录的路径）。每次候选窗弹出由 RerollActiveCandidateSkinImages 重抽，
+// 弹窗期间的按键更新沿用本次选中，避免装饰图在打字过程中跳变。
+std::string activeDecorationImage;
+std::string activeBackgroundImage;
+
+// D2D 后端启动时不会走 PrepareHtmlForWnds（那是 WebView2 的 HTML 准备，ime_windows.cpp 里被
+// UseD2dSmallWindowUi 门控），而装饰图/背景图池的选中态由这里维护，D2D 的 ApplySkin 同样要读。
+// 所以重抽前若还没装载（或配置的皮肤刚换过），在这里按当前配置装载一次；已装载时是空操作。
+bool EnsureActiveCandidateSkinLoaded()
+{
+    if (activeExternalCandidateSkin)
+    {
+        return true;
+    }
+    const std::string candidateSkin = GetConfiguredCandidateSkin();
+    if (CandidateSkinCatalog::IsBuiltIn(candidateSkin))
+    {
+        return false;
+    }
+    const std::wstring skinsRoot = CommonUtils::get_ime_data_path_w() + L"\\skins";
+    activeExternalCandidateSkin = CandidateSkinCatalog::Load(skinsRoot, candidateSkin);
+    if (activeExternalCandidateSkin)
+    {
+        const bool light = ResolveConfiguredTheme(GetConfiguredThemeCand()) == "light";
+        if (!CandidateSkinCatalog::Supports(*activeExternalCandidateSkin, GetConfiguredCandidateWindowLayout(),
+                                            light ? "light" : "dark"))
+        {
+            activeExternalCandidateSkin.reset();
+        }
+    }
+    return activeExternalCandidateSkin.has_value();
+}
 } // namespace
+
+const std::string &ActiveCandidateSkinDecorationImage()
+{
+    return activeDecorationImage;
+}
+
+const std::string &ActiveCandidateSkinBackgroundImage()
+{
+    return activeBackgroundImage;
+}
+
+void RerollActiveCandidateSkinImages()
+{
+    EnsureActiveCandidateSkinLoaded();
+    activeDecorationImage.clear();
+    activeBackgroundImage.clear();
+    if (!activeExternalCandidateSkin)
+    {
+        return;
+    }
+    if (!activeExternalCandidateSkin->decorationImage.empty())
+    {
+        activeDecorationImage = activeExternalCandidateSkin->decorationImage[CandidateSkinCatalog::RandomImageIndex(
+            activeExternalCandidateSkin->decorationImage.size())];
+    }
+    if (!activeExternalCandidateSkin->backgroundImage.empty())
+    {
+        activeBackgroundImage = activeExternalCandidateSkin->backgroundImage[CandidateSkinCatalog::RandomImageIndex(
+            activeExternalCandidateSkin->backgroundImage.size())];
+    }
+}
 
 double GetActiveCandidateSkinDecorationTopDip()
 {
@@ -302,6 +365,18 @@ std::wstring ManifestImageCssUrl(const std::wstring &skinsRoot, const std::strin
     return EmbedSkinCssUrl(skinsRoot, skinId, raw);
 }
 
+// 图片池超过一张（skin.toml 写成数组）时 CSS 改读运行时变量，由候选更新脚本每次弹出注入随机选中的
+// 一张；池成员一律走虚拟主机 URL，脚本不会携带巨型 data URL。单张沿用内嵌优先的字面 url，行为不变。
+std::wstring PoolOrLiteralImageCssValue(const std::wstring &skinsRoot, const std::string &skinId,
+                                        const std::vector<std::string> &images, const wchar_t *variable)
+{
+    if (images.size() > 1)
+    {
+        return std::wstring(L"var(") + variable + L", none)";
+    }
+    return ManifestImageCssUrl(skinsRoot, skinId, images.empty() ? std::string() : images.front());
+}
+
 void AppendExternalCandidateCornerCss(std::wstring &css, const CandidateSkinCatalog::Package &skin)
 {
     if (!skin.cornerRadiusDip)
@@ -354,7 +429,8 @@ std::wstring BuildExternalCandidateSkinCss(const CandidateSkinCatalog::Package &
         css.append(horizontal);
         css.append(L" width: var(--msime-skin-decoration-width, 0px); "
                    L"height: var(--msime-skin-decoration-top, 0px); background: ");
-        css.append(ManifestImageCssUrl(skinsRoot, skin.id, skin.decorationImage));
+        css.append(
+            PoolOrLiteralImageCssValue(skinsRoot, skin.id, skin.decorationImage, L"--msime-skin-decoration-image"));
         css.append(L" center / contain no-repeat; pointer-events: none; }\n"
                    L".container { position: relative; z-index: 1; }\n");
     }
@@ -379,7 +455,8 @@ std::wstring BuildExternalCandidateSkinCss(const CandidateSkinCatalog::Package &
                         static_cast<int>(std::lround(surface.g * 255.0f)),
                         static_cast<int>(std::lround(surface.b * 255.0f)), surface.a * (1.0 - skin.backgroundOpacity));
         css.append(L".container:not(:empty) { background-image: linear-gradient(" + veil + L", " + veil + L"), ");
-        css.append(ManifestImageCssUrl(skinsRoot, skin.id, skin.backgroundImage));
+        css.append(
+            PoolOrLiteralImageCssValue(skinsRoot, skin.id, skin.backgroundImage, L"--msime-skin-background-image"));
         css.append(fmt::format(L"; background-size: auto, {}; background-position: center; "
                                L"background-repeat: no-repeat; background-origin: border-box; "
                                L"background-clip: border-box; }}\n",
@@ -482,6 +559,34 @@ void InjectCandidateDocumentSkin(std::wstring &html, const std::wstring &builtIn
 }
 } // namespace
 
+// 数组形态的皮肤图片：把当前弹窗随机选中的一张写进 CSS 变量，追加到候选更新脚本里；单张形态的
+// CSS 是字面 url，不读变量，这里也就不注入。变量值是虚拟主机 URL，皮肤 id 与路径都经过字符白名单
+// 校验，放进 JS 字符串无需再转义。
+void AppendActiveCandidateSkinImageVars(std::wstring &script)
+{
+    if (!activeExternalCandidateSkin)
+    {
+        return;
+    }
+    auto append = [&](bool used, const std::string &path, const wchar_t *variable) {
+        if (!used || path.empty())
+        {
+            return;
+        }
+        script.append(L"document.documentElement.style.setProperty('");
+        script.append(variable);
+        script.append(L"', \"url('https://candidate-skins/");
+        script.append(string_to_wstring(activeExternalCandidateSkin->id));
+        script.append(L"/");
+        script.append(string_to_wstring(path));
+        script.append(L"')\");\n");
+    };
+    append(activeExternalCandidateSkin->decorationImage.size() > 1, activeDecorationImage,
+           L"--msime-skin-decoration-image");
+    append(activeExternalCandidateSkin->backgroundImage.size() > 1, activeBackgroundImage,
+           L"--msime-skin-background-image");
+}
+
 int PrepareHtmlForWnds()
 {
     // 用户数据目录，默认 %LOCALAPPDATA%\metasequoiaime，安装时可以改到别的盘。
@@ -553,6 +658,8 @@ int PrepareHtmlForWnds()
             activeExternalCandidateSkin.reset();
         }
     }
+    // 装载（或装载失败回退）后先抽一次作为初始选中；下次候选窗弹出还会再抽。
+    RerollActiveCandidateSkinImages();
     std::wstring bodyHtmlPathCandWnd = assetPath + bodyHtmlCandWnd;
     ::BodyStringCandWnd = ReadHtmlFile(bodyHtmlPathCandWnd);
     std::wstring measureHtmlPathCandWnd = assetPath + measureHtmlCandWnd;

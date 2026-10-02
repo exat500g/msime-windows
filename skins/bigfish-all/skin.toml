@@ -1,0 +1,74 @@
+# 大肥鱼·全家福：在蓝色大肥鱼、探头、国庆三套皮肤基础上的混合版。
+# 每次候选框弹出，角色在三套装扮里随机一张，背景在三张纹理里随机一张；
+# 配色沿用蓝色大肥鱼的深海蓝底与金色序号，与三张底图都相容。
+# 所有图片路径都相对于本皮肤目录。资源复制自 bigfish / bigfish-peek / bigfish-national-day。
+schema_version = 1
+id = "bigfish-all"
+name = "大肥鱼·全家福"
+version = "1.0.0"
+author = "Metasequoia IME contributors"
+description = "大肥鱼全家福：每次候选框弹出，角色在蓝白女仆、探头、国庆敬礼三套装扮里随机，背景在气泡、蕾丝与星星里随机。"
+base = "fluent"
+
+[supports]
+layouts = ["horizontal", "vertical"]
+themes = ["dark", "light"]
+
+[candidate_window]
+min_width_dip = 176
+corner_radius_dip = 12
+
+# 三张角色图比例不同（384×416、496×388、352×440），装饰盒取最宽的探头版比例（124×97）：
+# contain 模式下另外两张都按高度铺满、下沿贴住卡片顶边，不会悬空。
+[candidate_window.decoration]
+image = ["assets/character.png", "assets/character-peek.png", "assets/character-national-day.png"]
+top_inset_dip = 97
+width_dip = 124
+align = "right"
+
+# 大部分透明的纹理（气泡波纹 / 蕾丝蝴蝶结 / 金色星星），深浅主题共用，与角色独立随机。
+[candidate_window.background]
+image = ["assets/background.png", "assets/background-peek.png", "assets/background-national-day.png"]
+fit = "cover"
+opacity = 0.35
+
+[candidate.dark]
+accent = "#5B9BFF"
+selected = "rgba(74, 144, 226, 0.32)"
+hover = "rgba(74, 144, 226, 0.18)"
+surface = "#141B33"
+border = "rgba(91, 155, 255, 0.38)"
+text = "#E3EAFF"
+number = "#E0C07A"
+translation = "#529E72"
+selected_translation = "#7FB797"
+
+[candidate.light]
+accent = "#2F5BD3"
+selected = "rgba(47, 91, 211, 0.16)"
+hover = "rgba(47, 91, 211, 0.09)"
+surface = "#F4F8FF"
+border = "rgba(42, 53, 112, 0.24)"
+text = "#1C2550"
+number = "#A67C2E"
+translation = "#448361"
+selected_translation = "#386D51"
+
+[toolbar]
+corner_radius_dip = 8
+
+[toolbar.dark]
+background = "#141B33"
+border = "rgba(91, 155, 255, 0.38)"
+handle = "#5B9BFF"
+divider = "rgba(91, 155, 255, 0.28)"
+icon = "#E3EAFF"
+hover = "rgba(74, 144, 226, 0.22)"
+
+[toolbar.light]
+background = "#F4F8FF"
+border = "rgba(42, 53, 112, 0.24)"
+handle = "#2F5BD3"
+divider = "rgba(42, 53, 112, 0.20)"
+icon = "#1C2550"
+hover = "rgba(47, 91, 211, 0.12)"

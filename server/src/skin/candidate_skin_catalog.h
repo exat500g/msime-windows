@@ -69,14 +69,15 @@ struct Package
     std::string shadow;
     // 候选字体族，排在用户配置的字体之前，用户字体作为回退；为空表示不改。
     std::string fontFamily;
-    // 候选框卡片内的背景图，绘制在底色之上、候选文字之下，按外框圆角裁剪。
-    std::string backgroundImage;
+    // 候选框卡片内的背景图池，绘制在底色之上、候选文字之下，按外框圆角裁剪；多于一张时
+    // 每次候选窗弹出随机取一张（skin.toml 的 image 写成数组）。
+    std::vector<std::string> backgroundImage;
     std::string backgroundFit = "cover"; // cover / contain / stretch
     double backgroundOpacity = 1.0;
     double decorationTopDip = 0.0;
     double decorationWidthDip = 0.0;
-    // 卡片上方的装饰图；为空表示皮肤没有装饰。
-    std::string decorationImage;
+    // 卡片上方的装饰图池；为空表示皮肤没有装饰，多于一张时每次候选窗弹出随机取一张。
+    std::vector<std::string> decorationImage;
     std::string decorationAlign = "right"; // left / center / right，相对卡片
     // 候选框里的翻页箭头；未设置时沿用 base 默认皮肤的设置（见 ResolvePageArrows）。
     std::optional<bool> pageArrows;
@@ -124,6 +125,8 @@ bool Supports(const Package &package, const std::string &layout, const std::stri
 std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::string &id,
                             std::string *error = nullptr);
 ScanResult Scan(const std::filesystem::path &skinsRoot);
+// 图片池按均匀分布随机取一个下标；池不超过一张时固定返回 0。装饰图与背景图在每次候选窗弹出时各抽一次。
+size_t RandomImageIndex(size_t poolSize);
 std::optional<DefaultSkin> LoadDefault(const std::filesystem::path &skinsRoot, const std::string &id,
                                        std::string *error = nullptr);
 // skinId 是配置里的候选皮肤：内置皮肤读自己的默认清单；外部皮肤先看自己的 page_arrows，

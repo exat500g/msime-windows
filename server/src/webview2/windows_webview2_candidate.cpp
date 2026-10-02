@@ -475,6 +475,8 @@ void UpdateHtmlContentWithJavaScript(ComPtr<ICoreWebView2> webview, const std::w
     const bool diagnosticsEnabled = GetConfiguredDiagnosticLogEnabled();
     script.append(L"window.msimeCandidateDiagnostics = ");
     script.append(diagnosticsEnabled ? L"true;\n" : L"false;\n");
+    // 皮肤图片池选中的那张先于内容写进 CSS 变量，卡片渲染时装饰图/背景图就是本弹窗的选中项。
+    AppendActiveCandidateSkinImageVars(script);
     script.append(L"document.getElementById('realContainer').innerHTML = `");
     script.append(escaped);
     script.append(L"`;\n");

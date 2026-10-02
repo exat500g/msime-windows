@@ -7,6 +7,7 @@
 #include <cmath>
 #include <fstream>
 #include <iterator>
+#include <random>
 #include <string_view>
 #include <system_error>
 
@@ -132,9 +133,53 @@ bool ReadEnum(const toml::table &table, const char *key, const std::vector<std::
     return true;
 }
 
-bool ReadResource(const toml::table &table, const char *key, std::string &out)
+// image 接受单张字符串或多张数组；每一项都要通过相对路径安全校验，数组不能为空也不能超过
+// kMaxImagePoolSize 张——Scan 会对每一项做文件存在检查，无上限会让一个异常清单拖慢整个目录扫描。
+// 图片本身按需解码、由 msimeui 的位图 LRU 缓存常驻（容量见 kMaxCachedBitmaps），声明多少张都不预载。
+// 键缺失返回 false，与装饰图/背景图「有表必有图」的规则一致。
+constexpr size_t kMaxImagePoolSize = 12;
+
+bool ReadImagePool(const toml::table &table, const char *key, std::vector<std::string> &out)
 {
-    return !table.contains(key) || (ReadString(table, key, out, 256, true) && IsSafeRelativeResource(out));
+    const toml::node *node = table.get(key);
+    if (!node)
+    {
+        return false;
+    }
+    const auto acceptEntry = [](const std::string &text) {
+        return !text.empty() && text.size() <= 256 && IsSafeRelativeResource(text);
+    };
+    out.clear();
+    if (const auto *value = node->as_string())
+    {
+        const std::string text = value->get();
+        if (!acceptEntry(text))
+        {
+            return false;
+        }
+        out.push_back(text);
+        return true;
+    }
+    const auto *array = node->as_array();
+    if (!array || array->empty() || array->size() > kMaxImagePoolSize)
+    {
+        return false;
+    }
+    for (const auto &item : *array)
+    {
+        const auto *value = item.as_string();
+        if (!value)
+        {
+            return false;
+        }
+        const std::string text = value->get();
+        if (!acceptEntry(text))
+        {
+            return false;
+        }
+        out.push_back(text);
+    }
+    return true;
 }
 
 // 皮肤颜色会被拼进 WebView2 的 CSS 声明，只放行颜色值会用到的字符，挡住 `;`、`{}` 之类能跳出声明的写法。
@@ -365,8 +410,7 @@ std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::s
         if (const toml::node *decorationNode = window->get("decoration"))
         {
             const auto *decoration = decorationNode->as_table();
-            if (!decoration || !decoration->contains("image") ||
-                !ReadResource(*decoration, "image", package.decorationImage) ||
+            if (!decoration || !ReadImagePool(*decoration, "image", package.decorationImage) ||
                 !ReadEnum(*decoration, "align", {"left", "center", "right"}, package.decorationAlign))
             {
                 SetError(error, "candidate_window.decoration 无效");
@@ -418,8 +462,7 @@ std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::s
         if (const toml::node *backgroundNode = window->get("background"))
         {
             const auto *background = backgroundNode->as_table();
-            if (!background || !background->contains("image") ||
-                !ReadResource(*background, "image", package.backgroundImage) ||
+            if (!background || !ReadImagePool(*background, "image", package.backgroundImage) ||
                 !ReadEnum(*background, "fit", {"cover", "contain", "stretch"}, package.backgroundFit))
             {
                 SetError(error, "candidate_window.background 无效");
@@ -463,17 +506,21 @@ std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::s
             }
         }
         std::error_code ec;
-        if (!package.decorationImage.empty() &&
-            !std::filesystem::is_regular_file(directory / std::filesystem::u8path(package.decorationImage), ec))
+        for (const auto &image : package.decorationImage)
         {
-            SetError(error, "找不到 candidate_window.decoration.image 文件");
-            return std::nullopt;
+            if (!std::filesystem::is_regular_file(directory / std::filesystem::u8path(image), ec))
+            {
+                SetError(error, "找不到 candidate_window.decoration.image 文件");
+                return std::nullopt;
+            }
         }
-        if (!package.backgroundImage.empty() &&
-            !std::filesystem::is_regular_file(directory / std::filesystem::u8path(package.backgroundImage), ec))
+        for (const auto &image : package.backgroundImage)
         {
-            SetError(error, "找不到 candidate_window.background.image 文件");
-            return std::nullopt;
+            if (!std::filesystem::is_regular_file(directory / std::filesystem::u8path(image), ec))
+            {
+                SetError(error, "找不到 candidate_window.background.image 文件");
+                return std::nullopt;
+            }
         }
         return package;
     }
@@ -586,5 +633,17 @@ bool ResolvePageArrows(const std::filesystem::path &skinsRoot, const std::string
     // 配置里的皮肤既不是内置、也没能作为外部皮肤加载时，渲染端回退到 fluent，这里跟着回退。
     const auto defaults = LoadDefault(skinsRoot, IsBuiltIn(base) ? base : "fluent");
     return defaults && defaults->pageArrows ? *defaults->pageArrows : kDefaultPageArrows;
+}
+
+size_t RandomImageIndex(const size_t poolSize)
+{
+    if (poolSize <= 1)
+    {
+        return 0;
+    }
+    // 调用方分布在 UI 线程与配置装载线程，thread_local 避免共享引擎加锁。
+    static thread_local std::mt19937 engine{std::random_device{}()};
+    std::uniform_int_distribution<size_t> distribution(0, poolSize - 1);
+    return distribution(engine);
 }
 } // namespace CandidateSkinCatalog

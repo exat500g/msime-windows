@@ -25,6 +25,7 @@ shadow = "soft"
 
 # 卡片上方的装饰图。不需要装饰就整张表不写；写了就必须给出 image、top_inset_dip 和 width_dip。
 # 图片在 width_dip × top_inset_dip 的框里等比缩放，框贴在卡片上方，不与卡片重叠。
+# image 也可以写成数组给出多张，每次候选框弹出随机选一张，如 image = ["assets/character.png", "assets/idle.png"]。
 [candidate_window.decoration]
 image = "assets/character.png"
 top_inset_dip = 88

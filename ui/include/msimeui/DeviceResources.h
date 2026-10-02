@@ -67,7 +67,9 @@ class DeviceResources
         Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap;
     };
 
-    static constexpr size_t kMaxCachedBitmaps = 4;
+    // 容量要装得下装饰图与背景图两整池随机图（池上限 12，实际常驻的只有抽到过的那些）：
+    // 池大于缓存时随机轮换会互相挤掉条目，每次弹出都重新读盘解码。
+    static constexpr size_t kMaxCachedBitmaps = 24;
 
     static bool IsSameColor(const D2D1_COLOR_F &lhs, const D2D1_COLOR_F &rhs);
     bool BindCompositionSurface();

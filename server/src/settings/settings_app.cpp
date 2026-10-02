@@ -125,6 +125,15 @@ void TraceStartup(const char *stage)
     }
 }
 
+// 皮肤 image 字段的兼容形态：单张输出字符串（与历史字段一致），多张输出数组，没有图片时输出
+// 空字符串——空数组在 JS 里是 truthy，旧页面会拿它去拼一个不存在的图片 URL。
+nlohmann::json SkinImageToJson(const std::vector<std::string> &images)
+{
+    if (images.empty())
+        return nlohmann::json("");
+    return images.size() == 1 ? nlohmann::json(images.front()) : nlohmann::json(images);
+}
+
 nlohmann::json CandidateColorsToJson(const CandidateSkinCatalog::CandidateColors &colors)
 {
     nlohmann::json json = nlohmann::json::object();
@@ -392,7 +401,7 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
                  {"minWidthDip", skin.minWidthDip},
                  {"decorationTopDip", skin.decorationTopDip},
                  {"decorationWidthDip", skin.decorationWidthDip},
-                 {"decorationImage", skin.decorationImage},
+                 {"decorationImage", SkinImageToJson(skin.decorationImage)},
                  {"decorationAlign", skin.decorationAlign},
                  {"cornerRadiusDip", skin.cornerRadiusDip ? nlohmann::json(*skin.cornerRadiusDip) : nlohmann::json()},
                  {"borderWidthDip", skin.borderWidthDip ? nlohmann::json(*skin.borderWidthDip) : nlohmann::json()},
@@ -400,7 +409,7 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
                   skin.itemCornerRadiusDip ? nlohmann::json(*skin.itemCornerRadiusDip) : nlohmann::json()},
                  {"shadow", skin.shadow},
                  {"fontFamily", skin.fontFamily},
-                 {"backgroundImage", skin.backgroundImage},
+                 {"backgroundImage", SkinImageToJson(skin.backgroundImage)},
                  {"backgroundFit", skin.backgroundFit},
                  {"backgroundOpacity", skin.backgroundOpacity},
                  {"candidate",

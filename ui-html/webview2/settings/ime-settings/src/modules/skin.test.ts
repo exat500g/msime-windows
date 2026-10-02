@@ -149,6 +149,28 @@ it('previews decoration placement, background image and corner radius from the s
   expect(generatedCss).toContain(':is(:scope, :scope .candidate).wnd-h .container > .pinyin + .row-wrapper > .cand { border-bottom-left-radius: 12px; }');
 });
 
+it('picks a random member of an image pool for the preview, mirroring the per-popup pick', () => {
+  const skins = [
+    {
+      id: 'custom-pool', name: 'Custom Pool', version: '1', base: 'fluent', layouts: ['horizontal'],
+      themes: ['dark'], compatible: true, decorationImage: ['assets/idle.png', 'assets/wave.png'],
+      decorationTopDip: 88, decorationWidthDip: 96
+    }
+  ];
+  const random = vi.spyOn(Math, 'random').mockReturnValue(0.99);
+  applyCandidateSkinCatalog(skins, [], '', true, 11);
+  applyCandidateSkin('custom-pool');
+  expect(generatedCss).toContain('/custom-pool/assets/wave.png');
+
+  // A catalog refresh invalidates the cached preview style, so the pick reruns — as it does per popup in the window.
+  random.mockReturnValue(0.1);
+  applyCandidateSkinCatalog(skins, [], '', true, 12);
+  applyCandidateSkin('custom-pool');
+  expect(generatedCss).toContain('/custom-pool/assets/idle.png');
+
+  random.mockRestore();
+});
+
 it('veils the background image with the surface the card is painted with in each theme', () => {
   applyCandidateSkinCatalog([
     {

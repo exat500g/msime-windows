@@ -97,14 +97,16 @@ opacity = 0.5
     const auto package = CandidateSkinCatalog::Load(root, "art", &error);
     REQUIRE(error.empty());
     REQUIRE(package.has_value());
-    REQUIRE_EQ(package->decorationImage, std::string("assets/character.png"));
+    REQUIRE_EQ(package->decorationImage.size(), size_t{1});
+    REQUIRE_EQ(package->decorationImage[0], std::string("assets/character.png"));
     REQUIRE_EQ(package->decorationTopDip, 88.0);
     REQUIRE_EQ(package->decorationWidthDip, 136.0);
     REQUIRE_EQ(package->decorationAlign, std::string("left"));
     // An explicit 0 means square corners, which is different from "not set".
     REQUIRE(package->cornerRadiusDip.has_value());
     REQUIRE_EQ(*package->cornerRadiusDip, 0.0);
-    REQUIRE_EQ(package->backgroundImage, std::string("assets/paper.png"));
+    REQUIRE_EQ(package->backgroundImage.size(), size_t{1});
+    REQUIRE_EQ(package->backgroundImage[0], std::string("assets/paper.png"));
     REQUIRE_EQ(package->backgroundFit, std::string("contain"));
     REQUIRE_EQ(package->backgroundOpacity, 0.5);
     RemoveSkin(root);
@@ -191,4 +193,61 @@ TEST_CASE(candidate_skin_catalog_rejects_invalid_toolbar_tables)
     REQUIRE(LoadFails(L"tb-color-inject", window + "[toolbar.light]\nicon = \"red; } body { display: none\"\n"));
     REQUIRE(LoadFails(L"tb-radius", window + "[toolbar]\ncorner_radius_dip = 40\n"));
     REQUIRE(LoadFails(L"tb-radius-type", window + "[toolbar]\ncorner_radius_dip = \"8px\"\n"));
+}
+
+TEST_CASE(candidate_skin_catalog_accepts_image_arrays_and_rejects_bad_entries)
+{
+    // 数组形态：装饰图与背景图都可以给出多张，运行时每次候选窗弹出随机取一张。
+    {
+        const auto root = WriteSkin(L"pool", R"(
+[candidate_window.decoration]
+image = ["assets/character.png", "assets/paper.png"]
+top_inset_dip = 88
+width_dip = 136
+
+[candidate_window.background]
+image = ["assets/paper.png"]
+)");
+        std::string error;
+        const auto package = CandidateSkinCatalog::Load(root, "art", &error);
+        REQUIRE(error.empty());
+        REQUIRE(package.has_value());
+        REQUIRE_EQ(package->decorationImage.size(), size_t{2});
+        REQUIRE_EQ(package->decorationImage[0], std::string("assets/character.png"));
+        REQUIRE_EQ(package->decorationImage[1], std::string("assets/paper.png"));
+        REQUIRE_EQ(package->decorationTopDip, 88.0);
+        REQUIRE_EQ(package->backgroundImage.size(), size_t{1});
+        REQUIRE_EQ(package->backgroundImage[0], std::string("assets/paper.png"));
+        RemoveSkin(root);
+    }
+
+    // 数组同样逐项走安全路径与文件存在校验；空数组与非字符串项都是无效 manifest。
+    const std::string sized = "top_inset_dip = 88\nwidth_dip = 136\n";
+    REQUIRE(LoadFails(L"pool-deco-empty", "[candidate_window.decoration]\nimage = []\n" + sized));
+    REQUIRE(LoadFails(L"pool-deco-number",
+                      "[candidate_window.decoration]\nimage = [\"assets/character.png\", 7]\n" + sized));
+    REQUIRE(LoadFails(L"pool-deco-escape",
+                      "[candidate_window.decoration]\nimage = [\"assets/character.png\", \"../x.png\"]\n" + sized));
+    REQUIRE(LoadFails(L"pool-deco-missing",
+                      "[candidate_window.decoration]\nimage = [\"assets/character.png\", \"assets/missing.png\"]\n" +
+                          sized));
+    REQUIRE(LoadFails(L"pool-bg-empty", "[candidate_window.background]\nimage = []\n"));
+    // 数组有上限：Scan 会对每一项做文件存在检查，异常清单不能拖慢整个目录扫描。
+    std::string oversized = "[candidate_window.background]\nimage = [";
+    for (int i = 0; i < 13; ++i)
+        oversized += std::string(i ? ", \"" : "\"") + "assets/paper.png\"";
+    oversized += "]\n";
+    REQUIRE(LoadFails(L"pool-oversized", oversized));
+    REQUIRE(LoadFails(L"pool-bg-missing",
+                      "[candidate_window.background]\nimage = [\"assets/paper.png\", \"assets/missing.png\"]\n"));
+}
+
+TEST_CASE(candidate_skin_catalog_random_image_index_stays_in_range)
+{
+    REQUIRE_EQ(CandidateSkinCatalog::RandomImageIndex(0), size_t{0});
+    REQUIRE_EQ(CandidateSkinCatalog::RandomImageIndex(1), size_t{0});
+    for (int i = 0; i < 200; ++i)
+    {
+        REQUIRE(CandidateSkinCatalog::RandomImageIndex(3) < 3);
+    }
 }

@@ -438,6 +438,8 @@ void CandidatePresenter::ApplySkin()
     fingerprint << '|' << GetConfiguredCandidateEnglishFont();
     // 同一个外部皮肤的 skin.toml 或图片改了，只有强制重载能看出来；带上重载代数让 D2D 也重读 manifest。
     fingerprint << '|' << GetCandidateSkinReloadRevision();
+    // 图片池选中的成员参与指纹：弹出重抽换了图才重走一次 ApplySkin，弹窗内按键保持命中缓存。
+    fingerprint << '|' << ActiveCandidateSkinDecorationImage() << '|' << ActiveCandidateSkinBackgroundImage();
     for (const auto &font : GetConfiguredCandidateFallbackFonts())
         fingerprint << '|' << font.size() << ':' << font;
     const std::string skinKey = fingerprint.str();
@@ -903,10 +905,13 @@ void CandidatePresenter::ApplySkin()
     {
         decorationTopDip_ = static_cast<float>(package->decorationTopDip);
         decorationWidthDip_ = static_cast<float>(package->decorationWidthDip);
-        if (!package->decorationImage.empty())
-            decorationPath = packageRoot + string_to_wstring(package->decorationImage);
-        if (!package->backgroundImage.empty())
-            backgroundPath = packageRoot + string_to_wstring(package->backgroundImage);
+        // 图片路径取图片池的当前选中项（单张池即唯一成员），与 WebView2 端的 CSS 变量同源。
+        const std::string &pickedDecoration = ActiveCandidateSkinDecorationImage();
+        if (!pickedDecoration.empty())
+            decorationPath = packageRoot + string_to_wstring(pickedDecoration);
+        const std::string &pickedBackground = ActiveCandidateSkinBackgroundImage();
+        if (!pickedBackground.empty())
+            backgroundPath = packageRoot + string_to_wstring(pickedBackground);
         cardMinWidthDip_ =
             (std::max)({cardMinWidthDip_, static_cast<float>(package->minWidthDip), decorationWidthDip_});
     }
@@ -1389,6 +1394,11 @@ void CandidatePresenter::ShowFromGlobalState(POINT caret)
     if (!bound_ || !hwnd_ || !impl_ || !impl_->root)
     {
         return;
+    }
+    // 隐藏 → 弹出的边界：装饰图/背景图池在这里重抽，弹窗内的按键更新沿用本次选中。
+    if (!::is_global_wnd_cand_shown)
+    {
+        RerollActiveCandidateSkinImages();
     }
     // A composition can start before the host reports a usable text extent
     // (first focus, or resuming after a long idle). The caret then arrives as

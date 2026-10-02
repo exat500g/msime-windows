@@ -77,6 +77,13 @@ bool ApplyConfiguredFloatingToolbarAppearance(std::function<void()> onComplete);
 // Geometry declared by the active external skin package. Built-in skins return 0.
 double GetActiveCandidateSkinDecorationTopDip();
 double GetActiveCandidateSkinDecorationWidthDip();
+// 当前生效外部皮肤图片池随机选中的成员（相对皮肤目录的路径），无图或皮肤失效时为空。
+const std::string &ActiveCandidateSkinDecorationImage();
+const std::string &ActiveCandidateSkinBackgroundImage();
+// 每次候选窗弹出（隐藏 → 显示的边界）重抽装饰图与背景图；装载外部皮肤后也调用一次作为初始选中。
+void RerollActiveCandidateSkinImages();
+// 数组形态的皮肤图片：把当前选中的一张写进 CSS 变量，追加到候选更新脚本里。
+void AppendActiveCandidateSkinImageVars(std::wstring &script);
 // Push half-monitor CSS max width/height (DIP) into a small-window page.
 void InjectSurfaceViewportLimits(ICoreWebView2 *webview, HWND hwnd);
 // WebView2 rasterization scale includes both monitor DPI and the user's text

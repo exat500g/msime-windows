@@ -23,8 +23,9 @@ type ExternalSkin = {
   id: string; name: string; version: string; author?: string; description?: string;
   base: string; layouts: string[]; themes: string[];
   minWidthDip?: number; decorationTopDip?: number; decorationWidthDip?: number; compatible: boolean;
-  decorationImage?: string; decorationAlign?: string; cornerRadiusDip?: number | null;
-  backgroundImage?: string; backgroundFit?: string; backgroundOpacity?: number;
+  // The manifest's image field: a single path, or an array of paths the candidate window picks from at random per popup.
+  decorationImage?: string | string[]; decorationAlign?: string; cornerRadiusDip?: number | null;
+  backgroundImage?: string | string[]; backgroundFit?: string; backgroundOpacity?: number;
   candidate?: { dark?: CandidateColors; light?: CandidateColors };
   toolbar?: { dark?: ToolbarColors; light?: ToolbarColors }; toolbarCornerRadiusDip?: number | null;
   borderWidthDip?: number | null; itemCornerRadiusDip?: number | null; shadow?: string; fontFamily?: string;
@@ -178,16 +179,28 @@ ${h}.preedit-hidden > .row-wrapper:is(:last-child, .last-visible) > .cand { bord
   return css;
 }
 
+// The manifest's image field holds one path or an array of paths; normalize both to a pool and pick one at random,
+// mirroring the candidate window's per-popup pick.
+function skinImagePool(value: unknown): string[] {
+  if (typeof value === 'string') return value ? [value] : [];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function pickSkinImage(images: string[]): string | undefined {
+  return images.length === 0 ? undefined : images[Math.floor(Math.random() * images.length)];
+}
+
 // Mirrors the candidate window: the image covers the whole card including the area under its border, which is drawn on
 // top, as in D2D. A ::before cannot reach there because the card is a scroll container that clips to its padding box, so
 // the translucent border showed a ring of bare surface. A layer has no opacity of its own, so a veil of the surface at
 // (1 - opacity) over the image gives the same result as the image at that opacity over the surface.
 function backgroundPreviewCss(skin: ExternalSkin): string {
-  if (!skin.backgroundImage) return '';
+  const picked = pickSkinImage(skinImagePool(skin.backgroundImage));
+  if (!picked) return '';
   const size = skin.backgroundFit === 'contain' ? 'contain' : skin.backgroundFit === 'stretch' ? '100% 100%' : 'cover';
   const opacity = boundedNumber(skin.backgroundOpacity, 1) ?? 1;
   const veilPercent = Math.round((1 - opacity) * 1000) / 10;
-  const image = `url("${resourceUrl(skin.id, skin.backgroundImage)}")`;
+  const image = `url("${resourceUrl(skin.id, picked)}")`;
   const rule = (scope: string, colors: CandidateColors) => {
     // The same surface the card is painted with: the manifest's, else the base preview's variable.
     const surface = skinColor(colors.surface) ?? (skin.base === 'willow_green' ? 'var(--wg-surface)' : 'var(--cand-bg)');
@@ -322,8 +335,9 @@ function candidatePreviewCss(skin: ExternalSkin): string {
   // Same geometry as the candidate window: the card is at least as wide as the decoration, and the decoration box
   // sits on top of the card without overlapping it, aligned to the card's left, centre or right edge.
   let css = `.container:not(:empty) { min-width: max(7em, var(--msime-skin-min-width, 0px), var(--msime-skin-decoration-width, 0px)); }\n`;
-  if (skin.decorationImage && (skin.decorationTopDip || 0) > 0) {
-    const decoration = `url("${resourceUrl(skin.id, skin.decorationImage)}")`;
+  const pickedDecoration = pickSkinImage(skinImagePool(skin.decorationImage));
+  if (pickedDecoration && (skin.decorationTopDip || 0) > 0) {
+    const decoration = `url("${resourceUrl(skin.id, pickedDecoration)}")`;
     css += `.containerParent { padding-top: var(--msime-skin-decoration-top, 0px); position: relative; box-sizing: border-box; }
 .containerParent:not(:empty)::before {
   content: ""; position: absolute; z-index: 0; top: 0; ${decorationHorizontalCss(skin.decorationAlign)}
